@@ -91,6 +91,7 @@ void handle_client(int client_socket) {
     // Read the message from the client
     if (read(client_socket, buffer, 1024) < 0) {
         perror("read");
+        close(client_socket); // Make sure to close client socket on error
         return;
     }
     printf("Message received: %s\n", buffer);
@@ -111,6 +112,7 @@ void handle_client(int client_socket) {
         if (send(client_socket, message, strlen(message), 0) < 0) {
             perror("send");
             free(procs); // Free the dynamically allocated memory
+            close(client_socket); // Close client socket on error
             return;
         }
         printf("Message sent: %s\n", message);
@@ -167,9 +169,11 @@ int main() {
     // Accept incoming connections
     while (1) {
         int client_socket;
+        addr_size = sizeof(server_address);  // Reinitialize addr_size before each accept()
+        
         if ((client_socket = accept(server_socket, (struct sockaddr *)&server_address, (socklen_t *)&addr_size)) < 0) {
             perror("accept");
-            return 1;
+            continue;  // Instead of returning, keep server running even if accept fails
         }
 
         // Handle the client request in the same thread (synchronously)
@@ -180,6 +184,3 @@ int main() {
     close(server_socket);
     return 0;
 }
-
-
-

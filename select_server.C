@@ -13,8 +13,8 @@
 #include <errno.h>
 
 #define PORT 8080
-#define MAX_CLIENTS 10
 #define BUFFER_SIZE 1024
+#define INITIAL_PROC_CAPACITY 10
 
 typedef struct {
     char name[256];
@@ -32,27 +32,47 @@ void get_cpu_usage(ProcessInfo *proc) {
         perror("open");
         return;
     }
-   
+
     read(fd, buffer, sizeof(buffer));
     sscanf(buffer, "%*d %s %*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %ld %ld",
            proc->name, &proc->user_time, &proc->kernel_time);
     close(fd);
 }
 
-// Function to find top two CPU-consuming processes
-void find_top_processes(ProcessInfo procs[], int num_procs) {
+// Function to find all processes and dynamically allocate memory for them
+int find_all_processes(ProcessInfo **procs) {
     DIR *dir = opendir("/proc");
     struct dirent *entry;
+    int capacity = INITIAL_PROC_CAPACITY;
     int count = 0;
 
-    while ((entry = readdir(dir)) != NULL && count < num_procs) {
+    // Allocate initial memory for processes
+    *procs = malloc(capacity * sizeof(ProcessInfo));
+    if (*procs == NULL) {
+        perror("malloc");
+        return -1;
+    }
+
+    while ((entry = readdir(dir)) != NULL) {
         if (isdigit(*entry->d_name)) {
-            procs[count].pid = atoi(entry->d_name);
-            get_cpu_usage(&procs[count]);
+            if (count >= capacity) {
+                // Reallocate more memory if capacity is exceeded
+                capacity *= 2;
+                *procs = realloc(*procs, capacity * sizeof(ProcessInfo));
+                if (*procs == NULL) {
+                    perror("realloc");
+                    closedir(dir);
+                    return -1;
+                }
+            }
+
+            (*procs)[count].pid = atoi(entry->d_name);
+            get_cpu_usage(&(*procs)[count]);
             count++;
         }
     }
     closedir(dir);
+    return count;
 }
 
 // Function to compare processes by their total CPU time (user_time + kernel_time)
@@ -61,19 +81,14 @@ int compare_processes(const void *a, const void *b) {
     ProcessInfo *procB = (ProcessInfo *)b;
     long total_time_a = procA->user_time + procA->kernel_time;
     long total_time_b = procB->user_time + procB->kernel_time;
-    return total_time_b - total_time_a;
+    return total_time_b - total_time_a; // Descending order
 }
 
 int main() {
-    int server_fd, new_socket, client_sockets[MAX_CLIENTS], max_sd, sd;
+    int server_fd, new_socket, max_sd, sd;
     struct sockaddr_in address;
     fd_set readfds;
     char buffer[BUFFER_SIZE];
-
-    // Initialize client sockets
-    for (int i = 0; i < MAX_CLIENTS; i++) {
-        client_sockets[i] = 0;
-    }
 
     // Create server socket
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
@@ -115,18 +130,7 @@ int main() {
         FD_SET(server_fd, &readfds);
         max_sd = server_fd;
 
-        // Add client sockets to set
-        for (int i = 0; i < MAX_CLIENTS; i++) {
-            sd = client_sockets[i];
-            if (sd > 0) {
-                FD_SET(sd, &readfds);
-            }
-            if (sd > max_sd) {
-                max_sd = sd;
-            }
-        }
-
-        // Wait for activity on any of the sockets
+        // Wait for activity on the server socket (incoming connections)
         int activity = select(max_sd + 1, &readfds, NULL, NULL, NULL);
         if ((activity < 0) && (errno != EINTR)) {
             perror("Select error");
@@ -141,23 +145,39 @@ int main() {
 
             printf("New connection, socket fd is %d\n", new_socket);
 
-            // Find top two CPU-consuming processes
-            ProcessInfo procs[MAX_CLIENTS];
-            find_top_processes(procs, MAX_CLIENTS);
+            // Find all processes
+            ProcessInfo *procs = NULL;
+            int num_procs = find_all_processes(&procs);
 
-            // Sort the processes by CPU usage (highest first)
-            qsort(procs, MAX_CLIENTS, sizeof(ProcessInfo), compare_processes);
+            if (num_procs > 0) {
+                // Sort the processes by CPU usage (highest first)
+                qsort(procs, num_procs, sizeof(ProcessInfo), compare_processes);
 
-            // Create a response with the top two processes
-            char response[BUFFER_SIZE];
-            snprintf(response, sizeof(response),
-                     "Top 2 CPU-consuming processes:\n1. PID: %d, Name: %s, CPU Time: %ld\n2. PID: %d, Name: %s, CPU Time: %ld\n",
-                     procs[0].pid, procs[0].name, procs[0].user_time + procs[0].kernel_time,
-                     procs[1].pid, procs[1].name, procs[1].user_time + procs[1].kernel_time);
+                // Create a response with the top two processes
+                char response[BUFFER_SIZE];
+                if (num_procs >= 2) {
+                    snprintf(response, sizeof(response),
+                             "Top 2 CPU-consuming processes:\n"
+                             "1. PID: %d, Name: %s, CPU Time: %ld\n"
+                             "2. PID: %d, Name: %s, CPU Time: %ld\n",
+                             procs[0].pid, procs[0].name, procs[0].user_time + procs[0].kernel_time,
+                             procs[1].pid, procs[1].name, procs[1].user_time + procs[1].kernel_time);
+                } else if (num_procs == 1) {
+                    snprintf(response, sizeof(response),
+                             "Only one process found:\n"
+                             "1. PID: %d, Name: %s, CPU Time: %ld\n",
+                             procs[0].pid, procs[0].name, procs[0].user_time + procs[0].kernel_time);
+                } else {
+                    snprintf(response, sizeof(response), "No processes found.\n");
+                }
 
-            // Send the response to the client
-            send(new_socket, response, strlen(response), 0);
-            printf("Sent top CPU-consuming processes to the client\n");
+                // Send the response to the client
+                send(new_socket, response, strlen(response), 0);
+                printf("Sent top CPU-consuming processes to the client\n");
+            }
+
+            // Free allocated memory
+            free(procs);
 
             // Close the socket after sending the information
             close(new_socket);

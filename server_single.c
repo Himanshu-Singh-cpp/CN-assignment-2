@@ -34,13 +34,23 @@ void get_cpu_usage(ProcessInfo *proc) {
     close(fd);
 }
 
-// Function to find top two CPU-consuming processes
+// Function to compare two processes based on total CPU time (user_time + kernel_time)
+int compare_processes(const void *a, const void *b) {
+    ProcessInfo *procA = (ProcessInfo *)a;
+    ProcessInfo *procB = (ProcessInfo *)b;
+    long total_time_A = procA->user_time + procA->kernel_time;
+    long total_time_B = procB->user_time + procB->kernel_time;
+    return total_time_B - total_time_A; // Sort in descending order
+}
+
+// Function to find top two CPU-consuming processes (by sorting all processes)
 void find_top_processes(ProcessInfo procs[], int num_procs) {
     DIR *dir = opendir("/proc");
     struct dirent *entry;
     int count = 0;
 
-    while ((entry = readdir(dir)) != NULL && count < num_procs) {
+    // Collect all processes' information
+    while ((entry = readdir(dir)) != NULL) {
         if (isdigit(*entry->d_name)) {
             procs[count].pid = atoi(entry->d_name);
             get_cpu_usage(&procs[count]);
@@ -48,7 +58,16 @@ void find_top_processes(ProcessInfo procs[], int num_procs) {
         }
     }
     closedir(dir);
+
+    // Sort the processes based on total CPU time (user_time + kernel_time)
+    qsort(procs, count, sizeof(ProcessInfo), compare_processes);
+
+    // Only keep the top `num_procs` processes (in this case, 2)
+    if (count > num_procs) {
+        count = num_procs;
+    }
 }
+
 
 void handle_client(int client_socket) {
     char buffer[1024] = {0};

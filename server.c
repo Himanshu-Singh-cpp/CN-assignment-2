@@ -7,11 +7,12 @@
 #include <unistd.h>
 #include <stdbool.h>
 #include <fcntl.h>
-#include <dirent.h>   // For working with /proc directory
-#include <ctype.h>    // For checking if the directory entry is a digit
-#include <stdlib.h>   // For malloc, free, and qsort
+#include <dirent.h>   
+#include <ctype.h>    
+#include <stdlib.h>
+#include <stdint.h> // Include for intptr_t
 
-#define PORT 8080
+#define PORT 8081
 #define MAX_CLIENTS 10
 
 typedef struct {
@@ -47,42 +48,65 @@ void get_cpu_usage(ProcessInfo *proc) {
 int compare_cpu_usage(const void *a, const void *b) {
     const ProcessInfo *procA = (const ProcessInfo *)a;
     const ProcessInfo *procB = (const ProcessInfo *)b;
-    
+
     // Calculate total CPU time for both processes
     long totalA = procA->user_time + procA->kernel_time;
     long totalB = procB->user_time + procB->kernel_time;
-    
+
     // Sort in descending order (larger total CPU time first)
     return (totalB - totalA);
 }
 
-// Function to find top two CPU-consuming processes
-void find_top_processes(ProcessInfo procs[], int num_procs) {
+// Function to find and sort all CPU-consuming processes
+int find_all_processes(ProcessInfo **procs) {
     DIR *dir = opendir("/proc");
     if (dir == NULL) {
         perror("opendir");
-        return;
+        return 0;
     }
 
     struct dirent *entry;
     int count = 0;
+    int capacity = 100;  // Start with space for 100 processes
 
-    while ((entry = readdir(dir)) != NULL && count < num_procs) {
+    // Allocate memory for storing process info
+    *procs = malloc(capacity * sizeof(ProcessInfo));
+    if (*procs == NULL) {
+        perror("malloc");
+        closedir(dir);
+        return 0;
+    }
+
+    // Read all the directories in /proc
+    while ((entry = readdir(dir)) != NULL) {
         if (isdigit(*entry->d_name)) {
-            procs[count].pid = atoi(entry->d_name);
-            get_cpu_usage(&procs[count]);
+            // Expand the array if needed
+            if (count >= capacity) {
+                capacity *= 2;
+                *procs = realloc(*procs, capacity * sizeof(ProcessInfo));
+                if (*procs == NULL) {
+                    perror("realloc");
+                    closedir(dir);
+                    return count;
+                }
+            }
+            (*procs)[count].pid = atoi(entry->d_name);
+            get_cpu_usage(&(*procs)[count]);
             count++;
         }
     }
     closedir(dir);
 
     // Sort processes based on the total CPU time (user_time + kernel_time)
-    qsort(procs, count, sizeof(ProcessInfo), compare_cpu_usage);
+    qsort(*procs, count, sizeof(ProcessInfo), compare_cpu_usage);
+
+    return count;
 }
 
 void* handle_client(void* arg) {
+    // Correctly cast the argument to a pointer
     int client_socket = *(int*)arg;
-    free(arg);  // Free the dynamically allocated memory for the socket descriptor
+    free(arg);
 
     char buffer[1024] = {0};
 
@@ -95,8 +119,15 @@ void* handle_client(void* arg) {
     printf("Message received: %s\n", buffer);
 
     // Find and send top two CPU-consuming processes
-    ProcessInfo procs[2] = {0};  // Initialize array to hold process info
-    find_top_processes(procs, 2);
+    ProcessInfo *procs = NULL;
+    int num_procs = find_all_processes(&procs);
+    
+    if (num_procs < 2) {
+        perror("Not enough processes");
+        free(procs);
+        close(client_socket);
+        return NULL;
+    }
 
     char message[1024];
     sprintf(message, "Top two CPU-consuming processes:\n"
@@ -107,12 +138,14 @@ void* handle_client(void* arg) {
 
     if (send(client_socket, message, strlen(message), 0) < 0) {
         perror("send");
+        free(procs);
         close(client_socket);
         return NULL;
     }
     printf("Message sent: %s\n", message);
 
-    // Close the client socket
+    // Free allocated memory and close the client socket
+    free(procs);
     close(client_socket);
     pthread_exit(NULL);
 }
@@ -149,7 +182,7 @@ int main() {
 
     // Accept incoming connections
     while (true) {
-        int* client_socket = malloc(sizeof(int));  // Allocate memory for each client socket
+        int *client_socket = malloc(sizeof(int));
         if (!client_socket) {
             perror("malloc");
             continue;
@@ -158,7 +191,7 @@ int main() {
         *client_socket = accept(server_socket, (struct sockaddr *)&server_address, &addr_size);
         if (*client_socket < 0) {
             perror("accept");
-            free(client_socket);  // Free the allocated memory on failure
+            free(client_socket);
             continue;
         }
 
@@ -166,7 +199,7 @@ int main() {
         pthread_t thread;
         if (pthread_create(&thread, NULL, handle_client, (void*)client_socket) != 0) {
             perror("pthread_create");
-            free(client_socket);  // Free memory if thread creation fails
+            free(client_socket);
             continue;
         }
 

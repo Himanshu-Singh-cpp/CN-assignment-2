@@ -5,7 +5,7 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 
-#define PORT 8080
+#define PORT 8081
 
 // Function to handle each client request in a separate thread
 void* client_task(void* arg) {
@@ -28,7 +28,7 @@ void* client_task(void* arg) {
     serv_addr.sin_port = htons(PORT);
 
     // Convert IPv4 and IPv6 addresses from text to binary form
-    if (inet_pton(AF_INET, "192.168.192.240", &serv_addr.sin_addr) <= 0) {
+    if (inet_pton(AF_INET, "192.168.192.220", &serv_addr.sin_addr) <= 0) {
         perror("inet_pton");
         return NULL;
     }

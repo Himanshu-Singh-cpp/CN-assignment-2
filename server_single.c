@@ -44,28 +44,44 @@ int compare_processes(const void *a, const void *b) {
 }
 
 // Function to find top two CPU-consuming processes (by sorting all processes)
-void find_top_processes(ProcessInfo procs[], int num_procs) {
+void find_top_processes(ProcessInfo **procs, int *num_procs) {
     DIR *dir = opendir("/proc");
     struct dirent *entry;
-    int count = 0;
+    int count = 0, capacity = 1024; // Start with space for 1024 processes
+
+    // Allocate memory for the processes array
+    *procs = malloc(capacity * sizeof(ProcessInfo));
+    if (*procs == NULL) {
+        perror("malloc");
+        closedir(dir);
+        return;
+    }
 
     // Collect all processes' information
     while ((entry = readdir(dir)) != NULL) {
         if (isdigit(*entry->d_name)) {
-            procs[count].pid = atoi(entry->d_name);
-            get_cpu_usage(&procs[count]);
+            if (count >= capacity) {
+                // Reallocate memory if we exceed the capacity
+                capacity *= 2;
+                *procs = realloc(*procs, capacity * sizeof(ProcessInfo));
+                if (*procs == NULL) {
+                    perror("realloc");
+                    closedir(dir);
+                    return;
+                }
+            }
+            (*procs)[count].pid = atoi(entry->d_name);
+            get_cpu_usage(&(*procs)[count]);
             count++;
         }
     }
     closedir(dir);
 
     // Sort the processes based on total CPU time (user_time + kernel_time)
-    qsort(procs, count, sizeof(ProcessInfo), compare_processes);
+    qsort(*procs, count, sizeof(ProcessInfo), compare_processes);
 
-    // Only keep the top `num_procs` processes (in this case, 2)
-    if (count > num_procs) {
-        count = num_procs;
-    }
+    // Set the actual number of processes collected
+    *num_procs = count;
 }
 
 
@@ -79,20 +95,33 @@ void handle_client(int client_socket) {
     }
     printf("Message received: %s\n", buffer);
 
-    // Send a message to the client
-    ProcessInfo procs[2];
-    find_top_processes(procs, 2);
-    char message[1024];
-    sprintf(message, "Top two CPU-consuming processes:\n"
-                     "1. Name: %s, PID: %d, User Time: %ld, Kernel Time: %ld\n"
-                     "2. Name: %s, PID: %d, User Time: %ld, Kernel Time: %ld\n",
-                     procs[0].name, procs[0].pid, procs[0].user_time, procs[0].kernel_time,
-                     procs[1].name, procs[1].pid, procs[1].user_time, procs[1].kernel_time);
-    if (send(client_socket, message, strlen(message), 0) < 0) {
-        perror("send");
-        return;
+    // Find the top two CPU-consuming processes
+    ProcessInfo *procs = NULL;
+    int num_procs = 0;
+    find_top_processes(&procs, &num_procs);
+
+    // If we have at least 2 processes, proceed
+    if (num_procs >= 2) {
+        char message[1024];
+        sprintf(message, "Top two CPU-consuming processes:\n"
+                         "1. Name: %s, PID: %d, User Time: %ld, Kernel Time: %ld\n"
+                         "2. Name: %s, PID: %d, User Time: %ld, Kernel Time: %ld\n",
+                         procs[0].name, procs[0].pid, procs[0].user_time, procs[0].kernel_time,
+                         procs[1].name, procs[1].pid, procs[1].user_time, procs[1].kernel_time);
+        if (send(client_socket, message, strlen(message), 0) < 0) {
+            perror("send");
+            free(procs); // Free the dynamically allocated memory
+            return;
+        }
+        printf("Message sent: %s\n", message);
+    } else {
+        char *error_message = "Not enough processes found.";
+        send(client_socket, error_message, strlen(error_message), 0);
+        printf("%s\n", error_message);
     }
-    printf("Message sent: %s\n", message);
+
+    // Free the dynamically allocated memory
+    free(procs);
 
     // Close the client socket
     close(client_socket);

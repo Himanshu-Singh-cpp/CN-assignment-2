@@ -131,10 +131,17 @@ int main() {
     int server_socket;
     struct sockaddr_in server_address;
     int addr_size = sizeof(server_address);
+    int opt = 1;
 
     // Create a socket
     if ((server_socket = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror("socket");
+        return 1;
+    }
+
+    // Set SO_REUSEADDR to avoid "Address already in use" errors
+    if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        perror("setsockopt");
         return 1;
     }
 
@@ -149,8 +156,8 @@ int main() {
         return 1;
     }
 
-    // Listen for incoming connections
-    if (listen(server_socket, 1) < 0) { // Handle only one client at a time
+    // Listen for incoming connections with an increased backlog size
+    if (listen(server_socket, 5) < 0) { // Allow up to 5 clients in the queue
         perror("listen");
         return 1;
     }
@@ -173,3 +180,6 @@ int main() {
     close(server_socket);
     return 0;
 }
+
+
+

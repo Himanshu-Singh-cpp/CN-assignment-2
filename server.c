@@ -9,12 +9,10 @@
 #include <fcntl.h>
 #include <dirent.h>   // For working with /proc directory
 #include <ctype.h>    // For checking if the directory entry is a digit
-#include <stdlib.h>   // For malloc and free
-
+#include <stdlib.h>   // For malloc, free, and qsort
 
 #define PORT 8080
 #define MAX_CLIENTS 10
-
 
 typedef struct {
     char name[256];
@@ -22,7 +20,6 @@ typedef struct {
     long user_time;
     long kernel_time;
 } ProcessInfo;
-
 
 // Function to read CPU time from /proc/[pid]/stat
 void get_cpu_usage(ProcessInfo *proc) {
@@ -34,7 +31,6 @@ void get_cpu_usage(ProcessInfo *proc) {
         return;
     }
 
-
     ssize_t bytes_read = read(fd, buffer, sizeof(buffer) - 1);
     if (bytes_read > 0) {
         buffer[bytes_read] = '\0';  // Null-terminate the buffer
@@ -44,10 +40,21 @@ void get_cpu_usage(ProcessInfo *proc) {
         perror("read");
     }
 
-
     close(fd);
 }
 
+// Comparison function for sorting processes based on total CPU time (user + kernel)
+int compare_cpu_usage(const void *a, const void *b) {
+    const ProcessInfo *procA = (const ProcessInfo *)a;
+    const ProcessInfo *procB = (const ProcessInfo *)b;
+    
+    // Calculate total CPU time for both processes
+    long totalA = procA->user_time + procA->kernel_time;
+    long totalB = procB->user_time + procB->kernel_time;
+    
+    // Sort in descending order (larger total CPU time first)
+    return (totalB - totalA);
+}
 
 // Function to find top two CPU-consuming processes
 void find_top_processes(ProcessInfo procs[], int num_procs) {
@@ -57,10 +64,8 @@ void find_top_processes(ProcessInfo procs[], int num_procs) {
         return;
     }
 
-
     struct dirent *entry;
     int count = 0;
-
 
     while ((entry = readdir(dir)) != NULL && count < num_procs) {
         if (isdigit(*entry->d_name)) {
@@ -70,16 +75,16 @@ void find_top_processes(ProcessInfo procs[], int num_procs) {
         }
     }
     closedir(dir);
-}
 
+    // Sort processes based on the total CPU time (user_time + kernel_time)
+    qsort(procs, count, sizeof(ProcessInfo), compare_cpu_usage);
+}
 
 void* handle_client(void* arg) {
     int client_socket = *(int*)arg;
     free(arg);  // Free the dynamically allocated memory for the socket descriptor
 
-
     char buffer[1024] = {0};
-
 
     // Read the message from the client
     if (read(client_socket, buffer, 1024) < 0) {
@@ -89,11 +94,9 @@ void* handle_client(void* arg) {
     }
     printf("Message received: %s\n", buffer);
 
-
     // Find and send top two CPU-consuming processes
     ProcessInfo procs[2] = {0};  // Initialize array to hold process info
     find_top_processes(procs, 2);
-
 
     char message[1024];
     sprintf(message, "Top two CPU-consuming processes:\n"
@@ -102,7 +105,6 @@ void* handle_client(void* arg) {
                      procs[0].name, procs[0].pid, procs[0].user_time, procs[0].kernel_time,
                      procs[1].name, procs[1].pid, procs[1].user_time, procs[1].kernel_time);
 
-
     if (send(client_socket, message, strlen(message), 0) < 0) {
         perror("send");
         close(client_socket);
@@ -110,18 +112,15 @@ void* handle_client(void* arg) {
     }
     printf("Message sent: %s\n", message);
 
-
     // Close the client socket
     close(client_socket);
     pthread_exit(NULL);
 }
 
-
 int main() {
     int server_socket;
     struct sockaddr_in server_address;
     socklen_t addr_size = sizeof(server_address);
-
 
     // Create a socket
     if ((server_socket = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
@@ -129,12 +128,10 @@ int main() {
         return 1;
     }
 
-
     // Define the server address
     server_address.sin_family = AF_INET;         // IPv4
     server_address.sin_port = htons(PORT);       // Port
     server_address.sin_addr.s_addr = INADDR_ANY; // Any IP address
-
 
     // Bind the socket to the address
     if (bind(server_socket, (struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
@@ -142,16 +139,13 @@ int main() {
         return 1;
     }
 
-
     // Listen for incoming connections
     if (listen(server_socket, MAX_CLIENTS) < 0) {
         perror("listen");
         return 1;
     }
 
-
     printf("Server listening on port %d...\n", PORT);
-
 
     // Accept incoming connections
     while (true) {
@@ -161,14 +155,12 @@ int main() {
             continue;
         }
 
-
         *client_socket = accept(server_socket, (struct sockaddr *)&server_address, &addr_size);
         if (*client_socket < 0) {
             perror("accept");
             free(client_socket);  // Free the allocated memory on failure
             continue;
         }
-
 
         // Run every client in a separate thread
         pthread_t thread;
@@ -178,17 +170,11 @@ int main() {
             continue;
         }
 
-
         // Detach the thread so it cleans up after finishing
         pthread_detach(thread);
     }
-
 
     // Close the server socket
     close(server_socket);
     return 0;
 }
-
-
-
-

@@ -7,9 +7,9 @@
 #include <unistd.h>
 #include <stdbool.h>
 #include <fcntl.h>
-#include <dirent.h>   // For working with /proc directory
-#include <ctype.h>    // For checking if the directory entry is a digit
-#include <stdlib.h>   // For malloc, free, and qsort
+#include <dirent.h>   
+#include <ctype.h>    
+#include <stdlib.h>   
 
 #define PORT 8080
 #define MAX_CLIENTS 10
@@ -82,7 +82,7 @@ void find_top_processes(ProcessInfo procs[], int num_procs) {
 
 void* handle_client(void* arg) {
     int client_socket = *(int*)arg;
-    free(arg);  // Free the dynamically allocated memory for the socket descriptor
+    free(arg);  
 
     char buffer[1024] = {0};
 
@@ -95,7 +95,7 @@ void* handle_client(void* arg) {
     printf("Message received: %s\n", buffer);
 
     // Find and send top two CPU-consuming processes
-    ProcessInfo procs[2] = {0};  // Initialize array to hold process info
+    ProcessInfo procs[2] = {0};  
     find_top_processes(procs, 2);
 
     char message[1024];
@@ -149,7 +149,7 @@ int main() {
 
     // Accept incoming connections
     while (true) {
-        int* client_socket = malloc(sizeof(int));  // Allocate memory for each client socket
+        int* client_socket = malloc(sizeof(int));  
         if (!client_socket) {
             perror("malloc");
             continue;
@@ -158,7 +158,7 @@ int main() {
         *client_socket = accept(server_socket, (struct sockaddr *)&server_address, &addr_size);
         if (*client_socket < 0) {
             perror("accept");
-            free(client_socket);  // Free the allocated memory on failure
+            free(client_socket);  
             continue;
         }
 
@@ -166,7 +166,7 @@ int main() {
         pthread_t thread;
         if (pthread_create(&thread, NULL, handle_client, (void*)client_socket) != 0) {
             perror("pthread_create");
-            free(client_socket);  // Free memory if thread creation fails
+            free(client_socket); 
             continue;
         }
 

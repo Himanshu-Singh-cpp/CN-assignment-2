@@ -40,14 +40,14 @@ int compare_processes(const void *a, const void *b) {
     ProcessInfo *procB = (ProcessInfo *)b;
     long total_time_A = procA->user_time + procA->kernel_time;
     long total_time_B = procB->user_time + procB->kernel_time;
-    return total_time_B - total_time_A; // Sort in descending order
+    return total_time_B - total_time_A; 
 }
 
 // Function to find top two CPU-consuming processes (by sorting all processes)
 void find_top_processes(ProcessInfo **procs, int *num_procs) {
     DIR *dir = opendir("/proc");
     struct dirent *entry;
-    int count = 0, capacity = 1024; // Start with space for 1024 processes
+    int count = 0, capacity = 1024; 
 
     // Allocate memory for the processes array
     *procs = malloc(capacity * sizeof(ProcessInfo));
@@ -80,7 +80,6 @@ void find_top_processes(ProcessInfo **procs, int *num_procs) {
     // Sort the processes based on total CPU time (user_time + kernel_time)
     qsort(*procs, count, sizeof(ProcessInfo), compare_processes);
 
-    // Set the actual number of processes collected
     *num_procs = count;
 }
 
@@ -91,7 +90,7 @@ void handle_client(int client_socket) {
     // Read the message from the client
     if (read(client_socket, buffer, 1024) < 0) {
         perror("read");
-        close(client_socket); // Make sure to close client socket on error
+        close(client_socket); 
         return;
     }
     printf("Message received: %s\n", buffer);
@@ -111,8 +110,8 @@ void handle_client(int client_socket) {
                          procs[1].name, procs[1].pid, procs[1].user_time, procs[1].kernel_time);
         if (send(client_socket, message, strlen(message), 0) < 0) {
             perror("send");
-            free(procs); // Free the dynamically allocated memory
-            close(client_socket); // Close client socket on error
+            free(procs); 
+            close(client_socket); 
             return;
         }
         printf("Message sent: %s\n", message);
@@ -159,7 +158,7 @@ int main() {
     }
 
     // Listen for incoming connections with an increased backlog size
-    if (listen(server_socket, 5) < 0) { // Allow up to 5 clients in the queue
+    if (listen(server_socket, 10) < 0) { 
         perror("listen");
         return 1;
     }
@@ -169,11 +168,11 @@ int main() {
     // Accept incoming connections
     while (1) {
         int client_socket;
-        addr_size = sizeof(server_address);  // Reinitialize addr_size before each accept()
+        addr_size = sizeof(server_address);  
         
         if ((client_socket = accept(server_socket, (struct sockaddr *)&server_address, (socklen_t *)&addr_size)) < 0) {
             perror("accept");
-            continue;  // Instead of returning, keep server running even if accept fails
+            continue;  
         }
 
         // Handle the client request in the same thread (synchronously)

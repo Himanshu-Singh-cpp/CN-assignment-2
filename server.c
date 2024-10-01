@@ -106,7 +106,7 @@ int find_all_processes(ProcessInfo **procs) {
 void* handle_client(void* arg) {
     // Correctly cast the argument to a pointer
     int client_socket = *(int*)arg;
-    free(arg);  
+    free(arg);
 
     char buffer[1024] = {0};
 
@@ -182,7 +182,7 @@ int main() {
 
     // Accept incoming connections
     while (true) {
-        int* client_socket = malloc(sizeof(int));  
+        int *client_socket = malloc(sizeof(int));
         if (!client_socket) {
             perror("malloc");
             continue;
@@ -191,7 +191,7 @@ int main() {
         *client_socket = accept(server_socket, (struct sockaddr *)&server_address, &addr_size);
         if (*client_socket < 0) {
             perror("accept");
-            free(client_socket);  
+            free(client_socket);
             continue;
         }
 
@@ -199,7 +199,7 @@ int main() {
         pthread_t thread;
         if (pthread_create(&thread, NULL, handle_client, (void*)client_socket) != 0) {
             perror("pthread_create");
-            free(client_socket); 
+            free(client_socket);
             continue;
         }
 
